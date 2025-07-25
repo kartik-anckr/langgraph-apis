@@ -1,0 +1,16 @@
+# Web server (like Express.js for Python)
+fastapi==0.115.6
+uvicorn==0.34.0
+
+# LangChain and LangGraph - AI libraries  
+langchain==0.3.14
+langgraph==0.2.54
+
+# Google Gemini integration
+langchain-google-genai==2.0.8
+
+# For environment variables
+python-dotenv==1.0.1
+
+# For JSON handling - newer version for Python 3.13
+pydantic==2.10.4 
