@@ -12,5 +12,8 @@ langchain-google-genai==2.0.8
 # For environment variables
 python-dotenv==1.0.1
 
+# For HTTP requests (Slack webhooks)
+requests==2.32.3
+
 # For JSON handling - newer version for Python 3.13
 pydantic==2.10.4 

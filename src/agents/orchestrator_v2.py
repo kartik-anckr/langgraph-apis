@@ -15,6 +15,7 @@ from langchain_core.messages import SystemMessage
 
 from .arithmetic_agent import create_arithmetic_agent
 from .weather_agent import create_weather_agent
+from .slack_agent import create_slack_agent
 
 # Simple workflow state - this is what makes it V2
 class SimpleWorkflowState(TypedDict):
@@ -32,6 +33,7 @@ class SimpleOrchestratorV2:
         print("🔧 Setting up agents directly...")
         self.arithmetic_agent = create_arithmetic_agent()
         self.weather_agent = create_weather_agent()
+        self.slack_agent = create_slack_agent()
         
         # Create LLM
         gemini_api_key = os.getenv("GEMINI_API_KEY")
@@ -108,7 +110,33 @@ class SimpleOrchestratorV2:
             print(f"🌤️ [V2 TOOL] Weather result: {response}")
             return response
         
-        return [execute_math_agent, execute_weather_agent]
+        @tool
+        def execute_slack_agent(query: str, context: str = "") -> str:
+            """Execute the Slack agent for sending messages to Slack channels.
+            
+            Args:
+                query: The Slack messaging request
+                context: Previous results to use
+                
+            Returns:
+                Slack result
+            """
+            print(f"📱 [V2 TOOL] Executing Slack agent: {query}")
+            
+            # Add context if available
+            if context:
+                full_query = f"Previous context: {context}\nSlack request: {query}"
+            else:
+                full_query = query
+            
+            # Execute the agent directly
+            result = self.slack_agent.invoke({"messages": [{"role": "user", "content": full_query}]})
+            response = result["messages"][-1].content
+            
+            print(f"📱 [V2 TOOL] Slack result: {response}")
+            return response
+        
+        return [execute_math_agent, execute_weather_agent, execute_slack_agent]
     
     def _create_workflow(self):
         """Create the workflow graph - simpler than complex V2"""
@@ -119,6 +147,7 @@ class SimpleOrchestratorV2:
 🔧 AVAILABLE TOOLS:
 - execute_math_agent: For math/arithmetic questions
 - execute_weather_agent: For weather questions
+- execute_slack_agent: For sending messages to Slack channels
 
 🎯 YOUR JOB:
 1. Analyze the user's question
@@ -129,7 +158,7 @@ class SimpleOrchestratorV2:
 EXAMPLES:
 - "Add 5 and 10" → Use execute_math_agent
 - "Weather in London?" → Use execute_weather_agent  
-- "If it's sunny, calculate 15 + 25" → Use execute_weather_agent first, then execute_math_agent with context
+- "Send 'Hello team' to general channel" → Use execute_slack_agent
 
 Be smart about using tools and passing context!"""
 
