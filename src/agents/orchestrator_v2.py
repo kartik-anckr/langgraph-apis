@@ -5,17 +5,18 @@ Demonstrates tool-based agent execution with workflow state, but simplified
 
 import os
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.messages import SystemMessage
+from langgraph.graph import StateGraph
+from langgraph.prebuilt import ToolNode
 
 from .arithmetic_agent import create_arithmetic_agent
 from .weather_agent import create_weather_agent
 from .slack_agent import create_slack_agent
 
-# Import states and tools from separate modules
+# Import states, tools, nodes and edges from separate modules
 from ..states import SimpleWorkflowState
 from ..tools import create_orchestrator_tools
+from ..nodes import create_orchestrator_node, create_context_update_node
+from ..edges import create_workflow_edges
 
 class SimpleOrchestratorV2:
     """Simplified V2 Orchestrator - Easy to understand but keeps V2 concepts"""
@@ -54,79 +55,19 @@ class SimpleOrchestratorV2:
     def _create_workflow(self):
         """Create the workflow graph - simpler than complex V2"""
         
-        # Simple but intelligent system prompt
-        SYSTEM_PROMPT = """You are a V2 orchestrator that executes agents using tools. 
-
-🔧 AVAILABLE TOOLS:
-- execute_math_agent: For math/arithmetic questions
-- execute_weather_agent: For weather questions
-- execute_slack_agent: For sending messages to Slack channels
-
-🎯 YOUR JOB:
-1. Analyze the user's question
-2. Use the appropriate tool to execute the right agent
-3. For complex questions, you can use multiple tools in sequence
-4. Pass context between tools when needed
-
-EXAMPLES:
-- "Add 5 and 10" → Use execute_math_agent
-- "Weather in London?" → Use execute_weather_agent  
-- "Send 'Hello team' to general channel" → Use execute_slack_agent
-
-Be smart about using tools and passing context!"""
-
         graph_builder = StateGraph(SimpleWorkflowState)
         
-        def orchestrator_with_tools(state: SimpleWorkflowState):
-            """Main orchestrator node with tool capabilities"""
-            messages = state["messages"].copy()
-            
-            # Add system prompt
-            has_system = any(getattr(msg, 'type', None) == 'system' for msg in messages)
-            if not has_system:
-                system_msg = SystemMessage(content=SYSTEM_PROMPT)
-                messages = [system_msg] + messages
-            
-            # Add context from previous agent results if available
-            if state.get("context"):
-                context_info = f"\nPrevious context: {state['context']}"
-                if messages and hasattr(messages[-1], 'content'):
-                    messages[-1].content += context_info
-            
-            response = self.llm_with_tools.invoke(messages)
-            return {"messages": [response]}
-        
-        def update_context(state: SimpleWorkflowState):
-            """Update context with agent results - simple V2 feature"""
-            messages = state["messages"]
-            agent_results = state.get("agent_results", {})
-            
-            # Simple context building from the last message
-            if messages:
-                last_content = getattr(messages[-1], 'content', '')
-                new_context = f"Latest result: {last_content}"
-                
-                return {
-                    "context": new_context,
-                    "agent_results": {**agent_results, f"step_{len(agent_results)}": last_content}
-                }
-            
-            return {"context": state.get("context", "")}
+        # Create nodes from separate modules
+        orchestrator_node = create_orchestrator_node(self.llm_with_tools)
+        context_update_node = create_context_update_node()
         
         # Add nodes
-        graph_builder.add_node("orchestrator_with_tools", orchestrator_with_tools)
+        graph_builder.add_node("orchestrator_with_tools", orchestrator_node)
         graph_builder.add_node("tool_execution", ToolNode(tools=self.tools))
-        graph_builder.add_node("update_context", update_context)
+        graph_builder.add_node("update_context", context_update_node)
         
-        # Add edges - this creates the V2 workflow
-        graph_builder.add_edge(START, "orchestrator_with_tools")
-        graph_builder.add_conditional_edges(
-            "orchestrator_with_tools",
-            tools_condition,
-            {"tools": "tool_execution", "__end__": "update_context"}
-        )
-        graph_builder.add_edge("tool_execution", "update_context")
-        graph_builder.add_edge("update_context", END)
+        # Add edges from separate module
+        graph_builder = create_workflow_edges(graph_builder)
         
         return graph_builder.compile()
     
