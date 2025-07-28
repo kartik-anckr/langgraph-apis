@@ -4,19 +4,21 @@ Handles Slack webhook messaging with channel validation
 """
 
 import os
-from typing import Annotated
+import importlib.util
 from langchain_google_genai import ChatGoogleGenerativeAI
-from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.messages import SystemMessage
 
 # Import the Slack messaging tool
 from ..tools import send_slack_message, SLACK_CHANNELS
 
-class SlackState(TypedDict):
-    messages: Annotated[list, add_messages]
+# Import SlackState from states/slack.states directory
+_slack_state_path = os.path.join(os.path.dirname(__file__), '..', 'states', 'slack.states', 'slack_state.py')
+_spec = importlib.util.spec_from_file_location("slack_state", _slack_state_path)
+_slack_state_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_slack_state_module)
+SlackState = _slack_state_module.SlackState
 
 def create_slack_agent():
     """Create a specialized Slack messaging agent"""
