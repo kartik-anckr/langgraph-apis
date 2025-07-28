@@ -4,12 +4,8 @@ Demonstrates tool-based agent execution with workflow state, but simplified
 """
 
 import os
-from typing import Annotated, Dict, Any
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.tools import tool
-from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.messages import SystemMessage
 
@@ -17,11 +13,9 @@ from .arithmetic_agent import create_arithmetic_agent
 from .weather_agent import create_weather_agent
 from .slack_agent import create_slack_agent
 
-# Simple workflow state - this is what makes it V2
-class SimpleWorkflowState(TypedDict):
-    messages: Annotated[list, add_messages]
-    agent_results: Dict[str, str]  # Store results from different agents
-    context: str  # Simple context passing
+# Import states and tools from separate modules
+from ..states import SimpleWorkflowState
+from ..tools import create_orchestrator_tools
 
 class SimpleOrchestratorV2:
     """Simplified V2 Orchestrator - Easy to understand but keeps V2 concepts"""
@@ -47,7 +41,7 @@ class SimpleOrchestratorV2:
         )
         
         # Create tools that actually execute agents (V2 concept)
-        self.tools = self._create_execution_tools()
+        self.tools = create_orchestrator_tools(self.arithmetic_agent, self.weather_agent, self.slack_agent)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
         # Create workflow graph
@@ -55,88 +49,7 @@ class SimpleOrchestratorV2:
         
         print("✅ Simple Orchestrator V2 ready!")
     
-    def _create_execution_tools(self):
-        """Create tools that execute agents - this is the key V2 concept"""
-        
-        @tool
-        def execute_math_agent(query: str, context: str = "") -> str:
-            """Execute the arithmetic agent for math questions.
-            
-            Args:
-                query: The math question
-                context: Previous results to use
-                
-            Returns:
-                Math result
-            """
-            print(f"🧮 [V2 TOOL] Executing arithmetic agent: {query}")
-            
-            # Add context if available
-            if context:
-                full_query = f"Previous context: {context}\nMath question: {query}"
-            else:
-                full_query = query
-            
-            # Execute the agent directly
-            result = self.arithmetic_agent.invoke({"messages": [{"role": "user", "content": full_query}]})
-            response = result["messages"][-1].content
-            
-            print(f"🧮 [V2 TOOL] Math result: {response}")
-            return response
-        
-        @tool
-        def execute_weather_agent(query: str, context: str = "") -> str:
-            """Execute the weather agent for weather questions.
-            
-            Args:
-                query: The weather question  
-                context: Previous results to use
-                
-            Returns:
-                Weather result
-            """
-            print(f"🌤️ [V2 TOOL] Executing weather agent: {query}")
-            
-            # Add context if available
-            if context:
-                full_query = f"Previous context: {context}\nWeather question: {query}"
-            else:
-                full_query = query
-            
-            # Execute the agent directly
-            result = self.weather_agent.invoke({"messages": [{"role": "user", "content": full_query}]})
-            response = result["messages"][-1].content
-            
-            print(f"🌤️ [V2 TOOL] Weather result: {response}")
-            return response
-        
-        @tool
-        def execute_slack_agent(query: str, context: str = "") -> str:
-            """Execute the Slack agent for sending messages to Slack channels.
-            
-            Args:
-                query: The Slack messaging request
-                context: Previous results to use
-                
-            Returns:
-                Slack result
-            """
-            print(f"📱 [V2 TOOL] Executing Slack agent: {query}")
-            
-            # Add context if available
-            if context:
-                full_query = f"Previous context: {context}\nSlack request: {query}"
-            else:
-                full_query = query
-            
-            # Execute the agent directly
-            result = self.slack_agent.invoke({"messages": [{"role": "user", "content": full_query}]})
-            response = result["messages"][-1].content
-            
-            print(f"📱 [V2 TOOL] Slack result: {response}")
-            return response
-        
-        return [execute_math_agent, execute_weather_agent, execute_slack_agent]
+
     
     def _create_workflow(self):
         """Create the workflow graph - simpler than complex V2"""
