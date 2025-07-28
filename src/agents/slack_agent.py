@@ -6,9 +6,8 @@ Handles Slack webhook messaging with channel validation
 import os
 import importlib.util
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.messages import SystemMessage
+from langgraph.graph import StateGraph
+from langgraph.prebuilt import ToolNode
 
 # Import the Slack messaging tool
 from ..tools import send_slack_message, SLACK_CHANNELS
@@ -19,6 +18,10 @@ _spec = importlib.util.spec_from_file_location("slack_state", _slack_state_path)
 _slack_state_module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_slack_state_module)
 SlackState = _slack_state_module.SlackState
+
+# Import nodes and edges from separate modules
+from ..nodes import create_slack_chatbot_node
+from ..edges import create_slack_workflow_edges
 
 def create_slack_agent():
     """Create a specialized Slack messaging agent"""
@@ -44,55 +47,20 @@ def create_slack_agent():
     # Get available channels for the prompt
     available_channels = ", ".join(SLACK_CHANNELS.keys())
     
-    # Slack-specific system prompt
-    SLACK_PROMPT = f"""You are a specialized Slack messaging agent. Your expertise is sending messages to Slack channels.
-
-📱 YOUR ROLE:
-- You ONLY handle Slack messaging requests
-- Use send_slack_message tool to send messages to authorized channels
-- Always validate channel permissions before sending
-- Provide clear feedback on message delivery status
-
-📋 AVAILABLE CHANNELS: {available_channels}
-
-🎯 EXAMPLES:
-- "Send 'Hello team' to general" → Use send_slack_message tool with channel='general'
-- "Post update to development channel" → Use send_slack_message tool with channel='development'
-- "Send message to random-channel" → Will return permission error
-
-⚠️ IMPORTANT:
-- Only send messages to authorized channels: {available_channels}
-- For unauthorized channels, inform user about permission restrictions
-- Always confirm successful message delivery"""
-
     # Create state graph
     graph_builder = StateGraph(SlackState)
     
-    def slack_chatbot(state: SlackState):
-        messages = state["messages"].copy()
-        
-        # Add Slack system prompt
-        has_system = any(getattr(msg, 'type', None) == 'system' for msg in messages)
-        if not has_system:
-            system_msg = SystemMessage(content=SLACK_PROMPT)
-            messages = [system_msg] + messages
-            
-        return {"messages": [llm_with_tools.invoke(messages)]}
+    # Create nodes from separate modules
+    slack_chatbot_node = create_slack_chatbot_node(llm_with_tools, available_channels)
     
     # Add nodes
-    graph_builder.add_node("slack_chatbot", slack_chatbot)
+    graph_builder.add_node("slack_chatbot", slack_chatbot_node)
     
     tool_node = ToolNode(tools=slack_tools)
     graph_builder.add_node("slack_tools", tool_node)
     
-    # Add edges
-    graph_builder.add_edge(START, "slack_chatbot")
-    graph_builder.add_conditional_edges(
-        "slack_chatbot",
-        tools_condition,
-        {"tools": "slack_tools", "__end__": END}
-    )
-    graph_builder.add_edge("slack_tools", "slack_chatbot")
+    # Add edges from separate module
+    graph_builder = create_slack_workflow_edges(graph_builder)
     
     # Compile
     graph = graph_builder.compile()
